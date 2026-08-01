@@ -1,1 +1,0 @@
-# ma7shy_terms
