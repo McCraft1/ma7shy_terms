@@ -5,9 +5,9 @@ const app = express();
 
 // --- الإعدادات الأساسية ---
 const OWNER_ID = '1151179063122214963'; 
-const CLIENT_ID = '1508569205941735465'; 
-const CLIENT_SECRET = 'J7OBhcI9jlbT0GEg9sTUOpBtbZz9dnDG'; 
-const BOT_TOKEN = 'MTUwODU2OTIwNTk0MTczNTQ2NQ.GBUzDo.2Jt8_2YGpvmqkuxSmpSZSU4GIVUnpfnbr33QM0'; 
+const CLIENT_ID = '1508569205941735465';
+const CLIENT_SECRET = process.env.SECRET || 'J7OBhcI9jlbT0GEg9sTUOpBtbZz9dnDG'; 
+const BOT_TOKEN = process.env.TOKEN; // هيقرا التوكن من الـ Variables بأمان تام
 
 const DOMAIN = process.env.RAILWAY_STATIC_URL 
     ? 'https://' + process.env.RAILWAY_STATIC_URL 
