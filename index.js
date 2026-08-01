@@ -133,12 +133,42 @@ bot.on('messageCreate', async (message) => {
     }
 });
 
+// --- 🌐 الصفحة الرئيسية المضافة لحل مشكلة الـ Cannot GET ---
+app.get('/', (req, res) => {
+    const oauthUrl = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=identify%20guilds.join`;
+    
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="ar" dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Ma7shy Bot - نظام التحقق</title>
+            <style>
+                body { background-color: #0c0e17; color: #fff; font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; text-align: center; }
+                .main-card { background: #161925; padding: 50px 30px; border-radius: 24px; border: 1px solid #202225; box-shadow: 0 12px 40px rgba(0,0,0,0.5); max-width: 500px; }
+                h1 { color: #5865F2; font-size: 28px; margin-bottom: 10px; }
+                p { color: #a0a5b5; font-size: 16px; margin-bottom: 30px; line-height: 1.6; }
+                .btn { background: #5865F2; color: #fff; padding: 12px 30px; border-radius: 8px; font-weight: bold; text-decoration: none; font-size: 16px; transition: 0.3s; display: inline-block; }
+                .btn:hover { background: #4752c4; transform: translateY(-2px); }
+            </style>
+        </head>
+        <body>
+            <div class="main-card">
+                <h1>🚀 نظام التحقق التلقائي لبوت المحشي</h1>
+                <p>مرحباً بك في البوابة الرسمية للتحقق من الهوية. يرجى الضغط على الزر أدناه لبدء ربط حسابك بالسيرفر بأمان كامل.</p>
+                <a href="${oauthUrl}" class="btn">اضغط هنا لبدء التحقق القياسي</a>
+            </div>
+        </body>
+        </html>
+    `);
+});
+
 // --- 🖥️ موقع الإدارة الجامد (Admin Dashboard) ---
 app.get('/admin', (req, res) => {
     const uptimeMs = Date.now() - bootTime;
     const uptimeHours = Math.floor(uptimeMs / (1000 * 60 * 60));
     
-    // سرد أسماء الأعضاء الموثقين في جدول أو لستة شيك
     const usersList = usersDatabase.map(u => `<li>👤 @${u.username} <span style="color:#5865F2; font-size:12px;">(ID: ${u.id})</span></li>`).join('') || '<p style="color:#72767d;">مفيش أعضاء موثقين لحد دلوقتي..</p>';
 
     res.send(`
@@ -146,7 +176,6 @@ app.get('/admin', (req, res) => {
         <html lang="ar" dir="rtl">
         <head>
             <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>لوحة إدارة Ma7shy Bot</title>
             <style>
                 body { background-color: #0c0e17; color: #fff; font-family: system-ui, sans-serif; margin: 0; padding: 30px; display: flex; justify-content: center; }
@@ -170,7 +199,6 @@ app.get('/admin', (req, res) => {
                     <h1>🚀 Ma7shy Bot Control Panel</h1>
                     <div class="badge">متصل الآن</div>
                 </header>
-                
                 <div class="stats-grid">
                     <div class="card">
                         <h3>إجمالي المستخدمين الموثقين</h3>
@@ -181,7 +209,6 @@ app.get('/admin', (req, res) => {
                         <div class="number">${uptimeHours} ساعة</div>
                     </div>
                 </div>
-
                 <div class="users-box">
                     <h2>📋 قائمة الأعضاء الموثقين في القاعدة</h2>
                     <ul>
