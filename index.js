@@ -19,7 +19,6 @@ const REDIRECT_URI = DOMAIN + '/callback';
 const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'database.json');
 
-// تحميل البيانات أو إنشاء ملف جديد إذا لم يكن موجوداً
 let usersDatabase = [];
 if (fs.existsSync(DB_FILE)) {
     try {
@@ -41,14 +40,12 @@ const bot = new Client({
     ]
 });
 
-// وقت بدء تشغيل البوت لحساب الـ Uptime
 const bootTime = Date.now();
 
 bot.on('ready', () => {
     console.log(`Logged in as ${bot.user.tag}!`);
     console.log(`Current Redirect URI: ${REDIRECT_URI}`);
     
-    // تفعيل الكاستوم ستاتوس للبوت
     bot.user.setPresence({
         activities: [{ 
             name: 'custom', 
@@ -66,79 +63,58 @@ bot.on('messageCreate', async (message) => {
     const args = message.content.slice(1).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    // 1. أمر المساعدة المطور
     if (command === 'help') {
         const helpEmbed = new EmbedBuilder()
             .setTitle('🤖 Bot Commands List')
             .setColor('#5865F2')
-            .setDescription('قائمة الأوامر المتاحة للتحكم بالبوت والنظام:')
             .addFields(
-                { name: '⚙️ الأوامر العامة', value: '`+help` - يعرض هذه القائمة.\n`+stats` - يعرض إحصائيات البوت والتوثيق.' },
-                { name: '👑 أوامر المطور (Owner Only)', value: '`+panel` - إنشاء رابط التوثيق المحدث.\n`+check [User_ID]` - فحص حالة توثيق عضو معين.\n`+pullguild [Server_ID]` - سحب الأعضاء الموثقين إلى سيرفر محدد.' }
-            )
-            .setFooter({ text: 'Ma7shy Bot System' });
+                { name: '⚙️ الأوامر العامة', value: '`+help` - يعرض هذه القائمة.\n`+stats` - يعرض الإحصائيات.' },
+                { name: '👑 أوامر المطور', value: '`+panel` - رابط التوثيق للأعضاء.\n`+pullguild [Server_ID]` - سحب الأعضاء للسيرفر.' }
+            );
         return message.reply({ embeds: [helpEmbed] });
     }
 
-    // 2. أمر الإحصائيات (Stats)
     if (command === 'stats') {
         const uptimeMs = Date.now() - bootTime;
         const uptimeHours = Math.floor(uptimeMs / (1000 * 60 * 60));
         const uptimeMins = Math.floor((uptimeMs % (1000 * 60 * 60)) / (1000 * 60));
 
         const statsEmbed = new EmbedBuilder()
-            .setTitle('📊 Bot System Statistics')
+            .setTitle('📊 إحصائيات البوت')
             .setColor('#2ed573')
             .addFields(
                 { name: '👥 إجمالي الموثقين:', value: `${usersDatabase.length} عضو`, inline: true },
-                { name: '⏳ وقت التشغيل:', value: `${uptimeHours} ساعة و ${uptimeMins} دقيقة`, inline: true },
-                { name: '🟢 حالة الاتصال:', value: 'مستقر ومتصل', inline: true }
+                { name: '⏳ وقت التشغيل:', value: `${uptimeHours}س ${uptimeMins}د`, inline: true },
+                { name: '🌐 لوحة الإدارة:', value: `[اضغط هنا لفتح لوحة الويب](${DOMAIN}/admin)`, inline: false }
             );
         return message.reply({ embeds: [statsEmbed] });
     }
 
-    // 3. أمر لوحة التحكم (Panel)
     if (command === 'panel') {
-        if (message.author.id !== OWNER_ID) return message.reply('❌ هذا الأمر مخصص لمالك البوت فقط.');
+        if (message.author.id !== OWNER_ID) return message.reply('❌ للرئيس فقط.');
 
         const oauthUrl = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=identify%20guilds.join`;
 
         const panelEmbed = new EmbedBuilder()
             .setTitle('🔐 لوحة تحكم الإدارة')
             .setColor('#ED4245')
-            .setDescription('استخدم الرابط أدناه لتوجيه الأعضاء لإتمام عملية التوثيق القياسية.')
             .addFields(
-                { name: '🔗 رابط التوثيق المباشر:', value: `[اضغط هنا للتوثيق](${oauthUrl})` },
-                { name: '📊 الإحصائية الحالية:', value: `يوجد حالياً **${usersDatabase.length}** عضو جاهز للنقل.` }
+                { name: '🔗 رابط التوثيق:', value: `[اضغط هنا للتوثيق](${oauthUrl})` },
+                { name: '🖥️ لوحة الإدارة:', value: `[فتح موقع الإدارة الجامد](${DOMAIN}/admin)` },
+                { name: '📊 الأعضاء:', value: `${usersDatabase.length} موثق` }
             );
         return message.reply({ embeds: [panelEmbed] });
     }
 
-    // 4. أمر فحص عضو محدد (Check)
-    if (command === 'check') {
-        if (message.author.id !== OWNER_ID) return message.reply('❌ هذا الأمر مخصص لمالك البوت فقط.');
-        
-        const targetId = args[0];
-        if (!targetId) return message.reply('❌ يرجى إدخال الـ ID الخاص بالعضو المراد فحصه.');
-
-        const isVerified = usersDatabase.find(u => u.id === targetId);
-        if (isVerified) {
-            return message.reply(`✅ العضو **@${isVerified.username}** موثق بالفعل وموجود في قاعدة البيانات.`);
-        } else {
-            return message.reply('❌ هذا العضو غير موجود في قاعدة بيانات التوثيق.');
-        }
-    }
-
-    // 5. أمر سحب الأعضاء (Pull Guild)
     if (command === 'pullguild') {
-        if (message.author.id !== OWNER_ID) return message.reply('❌ هذا الأمر مخصص لمالك البوت فقط.');
+        if (message.author.id !== OWNER_ID) return message.reply('❌ للرئيس فقط.');
         
         const targetGuildId = args[0];
-        if (!targetGuildId) return message.reply('❌ يرجى تزويد أمر السحب بـ ID السيرفر المستهدف.');
+        if (!targetGuildId) return message.reply('❌ حط ID السيرفر يا حب.');
 
-        if (usersDatabase.length === 0) return message.reply('❌ لا يوجد أعضاء موثقين في قاعدة البيانات للقيام بنقلهم.');
+        if (usersDatabase.length === 0) return message.reply('❌ مفيش أعضاء في القاعدة.');
 
-        message.reply(`⏳ جاري بدء عملية نقل ${usersDatabase.length} عضو إلى السيرفر المحدد...`);
+        message.reply(`⏳ جاري نقل ${usersDatabase.length} عضو للسيرفر...`);
 
         let successCount = 0;
         for (const user of usersDatabase) {
@@ -150,40 +126,80 @@ bot.on('messageCreate', async (message) => {
                 );
                 successCount++;
             } catch (err) {
-                console.error(`Failed to pull ${user.username || user.id}:`, err.message);
+                console.error(`Failed:`, err.message);
             }
         }
-        return message.channel.send(`✅ اكملت العملية بنجاح! تم إضافة ${successCount} من أصل ${usersDatabase.length} عضو إلى السيرفر.`);
+        return message.channel.send(`✅ تم بنجاح نقل ${successCount}/${usersDatabase.length} عضو!`);
     }
 });
 
-// --- سيرفر الويب وواجهة المستخدم المحدثة ---
+// --- 🖥️ موقع الإدارة الجامد (Admin Dashboard) ---
+app.get('/admin', (req, res) => {
+    const uptimeMs = Date.now() - bootTime;
+    const uptimeHours = Math.floor(uptimeMs / (1000 * 60 * 60));
+    
+    // سرد أسماء الأعضاء الموثقين في جدول أو لستة شيك
+    const usersList = usersDatabase.map(u => `<li>👤 @${u.username} <span style="color:#5865F2; font-size:12px;">(ID: ${u.id})</span></li>`).join('') || '<p style="color:#72767d;">مفيش أعضاء موثقين لحد دلوقتي..</p>';
+
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="ar" dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>لوحة إدارة Ma7shy Bot</title>
+            <style>
+                body { background-color: #0c0e17; color: #fff; font-family: system-ui, sans-serif; margin: 0; padding: 30px; display: flex; justify-content: center; }
+                .container { width: 100%; max-width: 800px; }
+                header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #202225; padding-bottom: 20px; margin-bottom: 30px; }
+                h1 { color: #5865F2; margin: 0; font-size: 24px; }
+                .badge { background: #2ed573; color: #000; padding: 5px 12px; border-radius: 20px; font-weight: bold; font-size: 14px; }
+                .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 30px; }
+                .card { background: #161925; padding: 25px; border-radius: 16px; border: 1px solid #202225; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+                .card h3 { margin: 0 0 10px 0; color: #a0a5b5; font-size: 14px; }
+                .card .number { font-size: 28px; font-weight: bold; color: #fff; }
+                .users-box { background: #161925; padding: 25px; border-radius: 16px; border: 1px solid #202225; }
+                .users-box h2 { margin-top: 0; font-size: 18px; border-bottom: 1px solid #202225; padding-bottom: 10px; }
+                ul { list-style: none; padding: 0; max-height: 250px; overflow-y: auto; margin: 0; }
+                li { padding: 10px 0; border-bottom: 1px solid #202225; display: flex; justify-content: space-between; align-items: center; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <header>
+                    <h1>🚀 Ma7shy Bot Control Panel</h1>
+                    <div class="badge">متصل الآن</div>
+                </header>
+                
+                <div class="stats-grid">
+                    <div class="card">
+                        <h3>إجمالي المستخدمين الموثقين</h3>
+                        <div class="number">${usersDatabase.length}</div>
+                    </div>
+                    <div class="card">
+                        <h3>وقت تشغيل البوت</h3>
+                        <div class="number">${uptimeHours} ساعة</div>
+                    </div>
+                </div>
+
+                <div class="users-box">
+                    <h2>📋 قائمة الأعضاء الموثقين في القاعدة</h2>
+                    <ul>
+                        ${usersList}
+                    </ul>
+                </div>
+            </div>
+        </body>
+        </html>
+    `);
+});
+
+// --- صفحة التوثيق (Callback) ---
 app.get('/callback', async (req, res) => {
     const code = req.query.code;
     
     if (!code) {
-        return res.send(`
-            <!DOCTYPE html>
-            <html lang="ar" dir="rtl">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>خطأ في التوثيق</title>
-                <style>
-                    body { background-color: #0f111a; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; text-align: center; }
-                    .card { background: #1a1d29; padding: 30px; border-radius: 15px; border: 1px solid #ff4757; max-width: 400px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
-                    h1 { color: #ff4757; font-size: 22px; }
-                    p { color: #a0a5b5; font-size: 15px; }
-                </style>
-            </head>
-            <body>
-                <div class="card">
-                    <h1>❌ فشل الاتصال المباشر</h1>
-                    <p>يرجى استخدام الرابط الذي يوفره البوت الرسمي داخل تطبيق ديسكورد لإتمام عملية التحقق بشكل صحيح.</p>
-                </div>
-            </body>
-            </html>
-        `);
+        return res.send(`<body style="background:#0c0e17;color:#fff;text-align:center;padding-top:20vh;font-family:sans-serif;"><h1>❌ خطأ في الدخول المباشر</h1><p>استخدم رابط البوت من ديسكورد.</p></body>`);
     }
 
     try {
@@ -198,15 +214,13 @@ app.get('/callback', async (req, res) => {
         });
 
         const accessToken = tokenResponse.data.access_token;
-
         const userResponse = await axios.get('https://discord.com/api/v10/users/@me', {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
 
         const userData = userResponse.data;
-
-        // التحقق وتحديث التوكن أو إضافة مستخدم جديد
         const userIndex = usersDatabase.findIndex(u => u.id === userData.id);
+        
         if (userIndex > -1) {
             usersDatabase[userIndex].token = accessToken;
             usersDatabase[userIndex].username = userData.username;
@@ -222,32 +236,17 @@ app.get('/callback', async (req, res) => {
         res.send(`
             <!DOCTYPE html>
             <html lang="ar" dir="rtl">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>تم التوثيق بنجاح</title>
-                <style>
-                    body { background-color: #0c0e17; color: #fff; font-family: system-ui, -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; text-align: center; }
-                    .card { background: #161925; padding: 40px 30px; border-radius: 20px; border: 1px solid #2ed573; max-width: 450px; box-shadow: 0 12px 35px rgba(0,0,0,0.5); }
-                    .check-icon { font-size: 55px; color: #2ed573; margin-bottom: 20px; }
-                    h1 { color: #2ed573; font-size: 24px; margin: 0 0 10px 0; }
-                    p { color: #b3b9c9; font-size: 16px; line-height: 1.6; }
-                    .user-box { background: #5865F2; padding: 8px 15px; border-radius: 30px; font-weight: bold; display: inline-block; margin-top: 15px; font-size: 14px; }
-                </style>
-            </head>
-            <body>
-                <div class="card">
-                    <div class="check-icon">✓</div>
-                    <h1>تمت عملية التحقق بنجاح!</h1>
-                    <p>أهلاً بك، تم ربط حسابك بنظام التوثيق القياسي بنجاح ومزامنة الإعدادات الخاصة بك. يمكنك إغلاق هذه الصفحة والعودة إلى تطبيق ديسكورد الآن.</p>
-                    <div class="user-box">@${userData.username}</div>
+            <head><meta charset="UTF-8"><title>تم التوثيق</title></head>
+            <body style="background: #0c0e17; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; text-align: center;">
+                <div style="background: #161925; padding: 40px; border-radius: 20px; border: 1px solid #2ed573;">
+                    <h1 style="color: #2ed573;">🎉 تم التوثيق بنجاح!</h1>
+                    <p>أهلاً بك يا @${userData.username}، تم حفظ بياناتك بنجاح.</p>
                 </div>
             </body>
             </html>
         `);
     } catch (error) {
-        console.error(error.response ? error.response.data : error.message);
-        res.status(500).send('حدث خطأ أثناء معالجة البيانات.');
+        res.status(500).send('حدث خطأ داخلي.');
     }
 });
 
